@@ -1,0 +1,118 @@
+#! /usr/bin/node
+var Long     = require('long'),
+    options  = require('commander'),
+    fs       = require('fs'),
+    chokidar = require('chokidar'),
+    http     = require('http'),
+    colors   = require('colors'),
+    path     = require('path');
+
+var computeHash = function(path, cb) {
+  // get file size
+  // get first 64kb
+  // get last 64kb
+  // summup everything
+
+  var chunk_size = 65536;
+  var buf_start = new Buffer(chunk_size*2);
+  var buf_end = new Buffer(chunk_size*2);
+  var file_size = 0;
+  var self = this;
+  var t_chksum = [];
+
+  this.on('checksum-ready', function(chksum_part, name) {
+      //console.log(name+':checksum-ready #'+t_chksum.length+' + '+chksum_part);
+      t_chksum.push(chksum_part);
+      if(t_chksum.length == 3) {
+      var chksum = this.sumHex64bits(t_chksum[0], t_chksum[1]);
+      chksum = this.sumHex64bits(chksum, t_chksum[2]);
+      chksum = chksum.substr(-16);
+      cb(null, self.padLeft(chksum, '0', 16));
+      }
+      });
+
+  fs.stat(path, function(err, stat) {
+      if(err) return cb(err);
+
+      file_size = stat.size;
+      self.emit('checksum-ready', file_size.toString(16), "filesize");
+
+      fs.open(path, 'r', function(err, fd) {
+        if(err) {
+        return cb(err);
+        }
+
+        var t_buffers = [{buf:buf_start, offset:0}, {buf:buf_end, offset:file_size-chunk_size}];
+        for(var i in t_buffers) {
+        fs.read(fd, t_buffers[i].buf, 0, chunk_size*2, t_buffers[i].offset, function(err, bytesRead, buffer) {
+          if(err) return cb(err);
+
+          //console.log("Read "+bytesRead+" bytes ");
+          //console.log(buffer);
+          self.emit('checksum-ready', self.checksumBuffer(buffer, 16), "buf?");
+          });
+        }
+        });
+  });
+};
+
+// Utils for prettyfying
+var msg = {
+  PREFIX: '\t\t',
+  MOVIE_PREFIX: '\t\t  #'
+}
+
+
+var MOVIE_EXTENSIONS = ['avi', 'mp4', 'mkv', 'mpg'];
+var isMovie = function(path) {
+  return MOVIE_EXTENSIONS.indexOf(path.substr(path.length - 3)) > -1;
+}
+
+var fetchSubtitle = function(hash, language, size, callback){
+}
+
+var getSubtitlesFor = function(file) {
+  if (isMovie(file)) {
+    console.log(msg.MOVIE_PREFIX, 'New movie file added: '.bold.magenta, file);
+
+    console.log(msg.MOVIE_PREFIX, 'Calculating movie file hash...');
+    OpenSubtitlesHash(path, function(){
+      var queryParams = {
+        size: fs.statSync(path).size,
+        language: language,
+        hash: computeHash(path)
+      }
+
+      console.log(msg.MOVIE_PREFIX, '\t', 'Size of the file is: '.yellow, queryParams.size, ' bytes');
+
+      fetchSubtitle();
+
+    });
+  }
+}
+
+options
+  .version('0.0.1')
+  .option('-w, --watch', 'Watch for new movie files')
+  .option('-l <lang>, --language <lang>', 'Language you want to download')
+  .parse(process.argv);
+
+var fileOrFolder = options.args[0];
+var language     = options.L || 'eng';
+
+console.log("\n");
+console.log(msg.PREFIX, "Welcome to".red, "OhMySub".bold.red, "subtitle downloader!".red);
+console.log("\n");
+
+if (options.watch && fs.existsSync(fileOrFolder)) {
+  var watcher = chokidar.watch(fileOrFolder, { ignored: /[\/\\]\./, ignoreInitial: true, persistent: true });
+
+  console.log(msg.PREFIX, "I am now watching your specified directory".magenta, fileOrFolder.bold.red ,"for changes.".magenta);
+  console.log(msg.PREFIX, "Subtitles will be downloaded in".magenta, language.bold.red);
+  console.log('\n', msg.PREFIX, "Happy downloading!".rainbow);
+  console.log(msg.PREFIX);
+
+  watcher.on('add', getSubtitlesFor);
+} else {
+  getSubtitlesFor(fileOrFolder);
+}

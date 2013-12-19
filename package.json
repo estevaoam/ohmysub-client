@@ -1,0 +1,12 @@
+{
+  "name": "ohmysub-client",
+  "description": "download subtitles for your movies, automatically",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "long": "~1.1.2",
+    "commander": "~2.1.0",
+    "chokidar": "~0.8.1",
+    "colors": "~0.6.2"
+  }
+}
